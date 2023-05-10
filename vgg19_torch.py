@@ -5,11 +5,12 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.optim as optim
 from sklearn.metrics import confusion_matrix
-from torchvision.models import VGG16_Weights
+from torchvision.models import VGG19_Weights
 import matplotlib.pyplot as plt
 import numpy as np
 
-def vgg16():
+
+def vgg19():
     dataset_path = 'CK+48'
     img_size = (224, 224)
     transform = transforms.Compose([
@@ -31,20 +32,20 @@ def vgg16():
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False)
     test_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False)
 
-    vgg16 = models.vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
-    num_features = vgg16.classifier[6].in_features
-    features = list(vgg16.classifier.children())[:-2]
+    vgg19 = models.vgg19(weights=VGG19_Weights.IMAGENET1K_V1)
+    num_features = vgg19.classifier[6].in_features
+    features = list(vgg19.classifier.children())[:-2]
     features.extend([nn.Dropout(p=0.5),
                      nn.Linear(num_features, 256),
                      nn.ReLU(inplace=True),
                      nn.Dropout(p=0.5),
                      nn.Linear(256, len(classes))])
-    vgg16.classifier = nn.Sequential(*features)
+    vgg19.classifier = nn.Sequential(*features)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(vgg16.parameters(), lr=0.0005, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(vgg19.parameters(), lr=0.0005, momentum=0.9, weight_decay=0.001)
 
-    best_model_wts = vgg16.state_dict()
+    best_model_wts = vgg19.state_dict()
     best_loss = float('inf')
     num_epochs = 50
     no_improvement_epochs = 0
@@ -56,7 +57,7 @@ def vgg16():
     for epoch in range(num_epochs):
         for i, (inputs, labels) in enumerate(train_loader):
             optimizer.zero_grad()
-            outputs = vgg16(inputs)
+            outputs = vgg19(inputs)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -65,13 +66,13 @@ def vgg16():
                 with torch.no_grad():
                     val_loss = 0.0
                     for val_inputs, val_labels in val_loader:
-                        val_outputs = vgg16(val_inputs)
+                        val_outputs = vgg19(val_inputs)
                         val_loss += criterion(val_outputs, val_labels).item() * val_inputs.size(0)
                     val_loss /= len(val_dataset)
 
                 if val_loss < best_loss:
                     best_loss = val_loss
-                    best_model_wts = vgg16.state_dict()
+                    best_model_wts = vgg19.state_dict()
                     no_improvement_epochs = 0
                 else:
                     no_improvement_epochs += 1
@@ -84,15 +85,13 @@ def vgg16():
         total_train = 0
         with torch.no_grad():
             for inputs, labels in train_loader:
-                outputs = vgg16(inputs)
+                outputs = vgg19(inputs)
                 _, predicted = torch.max(outputs.data, 1)
                 total_train += labels.size(0)
                 correct_train += (predicted == labels).sum().item()
                 train_loss += criterion(outputs, labels).item() * inputs.size(0)
-        train_loss /= len(train_dataset)
-        train_accuracy = 100 * correct_train / total_train
-
-
+            train_loss /= len(train_dataset)
+            train_accuracy = 100 * correct_train / total_train
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
 
@@ -101,13 +100,14 @@ def vgg16():
 
         val_losses.append(val_loss)
 
-    vgg16.load_state_dict(best_model_wts)
+
+    vgg19.load_state_dict(best_model_wts)
 
     correct = 0
     total = 0
     with torch.no_grad():
         for inputs, labels in test_loader:
-            outputs = vgg16(inputs)
+            outputs = vgg19(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
@@ -118,7 +118,7 @@ def vgg16():
     y_true = []
     with torch.no_grad():
         for inputs, labels in test_loader:
-            outputs = vgg16(inputs)
+            outputs = vgg19(inputs)
             _, predicted = torch.max(outputs.data, 1)
             y_pred.extend(predicted.tolist())
             y_true.extend(labels.tolist())

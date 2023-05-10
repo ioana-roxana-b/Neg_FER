@@ -5,12 +5,13 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.optim as optim
 from sklearn.metrics import confusion_matrix
-from torchvision.models import VGG16_Weights
 import matplotlib.pyplot as plt
 import numpy as np
+from torchvision.models import VGG16_Weights
+
 
 def vgg16():
-    dataset_path = 'CK+48'
+    dataset_path = 'CK+48 - Copy'
     img_size = (224, 224)
     transform = transforms.Compose([
         transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0)),
@@ -22,7 +23,7 @@ def vgg16():
     ])
 
     dataset = torchvision.datasets.ImageFolder(root=dataset_path, transform=transform)
-    classes = ['positive', 'negative']
+    classes = ['contempt', 'happy', 'surprise', 'anger', 'disgust', 'fear', 'sadness']
     dataset.class_to_idx = {classes[i]: i for i in range(len(classes))}
     train_size = int(0.6 * len(dataset))
     test_size = len(dataset) - train_size
@@ -33,27 +34,20 @@ def vgg16():
 
     vgg16 = models.vgg16(weights=VGG16_Weights.IMAGENET1K_V1)
     num_features = vgg16.classifier[6].in_features
-    features = list(vgg16.classifier.children())[:-2]
-    features.extend([nn.Dropout(p=0.5),
-                     nn.Linear(num_features, 256),
-                     nn.ReLU(inplace=True),
-                     nn.Dropout(p=0.5),
-                     nn.Linear(256, len(classes))])
+    features = list(vgg16.classifier.children())[:-1]
+    features.extend([nn.Linear(num_features, len(classes))])
     vgg16.classifier = nn.Sequential(*features)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(vgg16.parameters(), lr=0.0005, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(vgg16.parameters(), lr=0.001, momentum=0.9, weight_decay=0.001)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 
     best_model_wts = vgg16.state_dict()
     best_loss = float('inf')
     num_epochs = 50
     no_improvement_epochs = 0
-
-    train_losses = []
-    val_losses = []
-    train_accuracies = []
-
     for epoch in range(num_epochs):
+        val_loss = float('inf')
         for i, (inputs, labels) in enumerate(train_loader):
             optimizer.zero_grad()
             outputs = vgg16(inputs)
@@ -75,31 +69,13 @@ def vgg16():
                     no_improvement_epochs = 0
                 else:
                     no_improvement_epochs += 1
-
             if i % 100 == 0:
                 print('[%d, %5d] loss: %.3f' % (epoch + 1, i + 1, loss.item()))
 
-        train_loss = 0.0
-        correct_train = 0
-        total_train = 0
-        with torch.no_grad():
-            for inputs, labels in train_loader:
-                outputs = vgg16(inputs)
-                _, predicted = torch.max(outputs.data, 1)
-                total_train += labels.size(0)
-                correct_train += (predicted == labels).sum().item()
-                train_loss += criterion(outputs, labels).item() * inputs.size(0)
-        train_loss /= len(train_dataset)
-        train_accuracy = 100 * correct_train / total_train
+            scheduler.step()
 
-
-        train_losses.append(train_loss)
-        train_accuracies.append(train_accuracy)
-
-        if epoch > 10 and val_loss > best_loss:
-            break
-
-        val_losses.append(val_loss)
+        #if epoch > 10 and val_loss > best_loss:
+            #break
 
     vgg16.load_state_dict(best_model_wts)
 
@@ -126,20 +102,13 @@ def vgg16():
     conf_mat = confusion_matrix(y_true, y_pred)
     print(conf_mat)
 
-    plt.figure()
-    plt.plot(train_losses, label='Training Loss')
-    plt.plot(val_losses, label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.title('Training and Validation Loss')
+    """""
+    plt.imshow(conf_mat, cmap=plt.cm.Blues)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
     plt.show()
-
-    plt.figure()
-    plt.plot(train_accuracies, label='Training Accuracy')
-    plt.axhline(y=100 * correct / total, color='r', linestyle='-', label='Test Accuracy')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy (%)')
-    plt.legend()
-    plt.title('Training and Test Accuracy')
-    plt.show()
+    """
