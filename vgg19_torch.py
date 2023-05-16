@@ -9,7 +9,6 @@ from torchvision.models import VGG19_Weights
 import matplotlib.pyplot as plt
 import numpy as np
 
-
 def vgg19():
     dataset_path = 'CK+48'
     img_size = (224, 224)
@@ -43,7 +42,7 @@ def vgg19():
     vgg19.classifier = nn.Sequential(*features)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(vgg19.parameters(), lr=0.0005, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(vgg19.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.001)
 
     best_model_wts = vgg19.state_dict()
     best_loss = float('inf')
@@ -90,8 +89,10 @@ def vgg19():
                 total_train += labels.size(0)
                 correct_train += (predicted == labels).sum().item()
                 train_loss += criterion(outputs, labels).item() * inputs.size(0)
-            train_loss /= len(train_dataset)
-            train_accuracy = 100 * correct_train / total_train
+        train_loss /= len(train_dataset)
+        train_accuracy = 100 * correct_train / total_train
+
+
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
 
@@ -99,7 +100,6 @@ def vgg19():
             break
 
         val_losses.append(val_loss)
-
 
     vgg19.load_state_dict(best_model_wts)
 

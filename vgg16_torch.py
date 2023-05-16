@@ -42,7 +42,7 @@ def vgg16():
     vgg16.classifier = nn.Sequential(*features)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(vgg16.parameters(), lr=0.0005, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(vgg16.parameters(), lr=0.0003, momentum=0.9, weight_decay=0.001)
 
     best_model_wts = vgg16.state_dict()
     best_loss = float('inf')
