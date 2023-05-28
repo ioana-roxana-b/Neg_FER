@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def vgg19():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     dataset_path = 'CK+48'
     img_size = (224, 224)
     transform = transforms.Compose([
@@ -25,13 +27,15 @@ def vgg19():
     classes = ['positive', 'negative']
     dataset.class_to_idx = {classes[i]: i for i in range(len(classes))}
     train_size = int(0.6 * len(dataset))
-    test_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    val_size = int(0.2 * len(dataset))
+    test_size = len(dataset) - train_size - val_size
+    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False)
-    test_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     vgg19 = models.vgg19(weights=VGG19_Weights.IMAGENET1K_V1)
+    vgg19 = vgg19.to(device)
     num_features = vgg19.classifier[6].in_features
     features = list(vgg19.classifier.children())[:-2]
     features.extend([nn.Dropout(p=0.5),
@@ -42,7 +46,7 @@ def vgg19():
     vgg19.classifier = nn.Sequential(*features)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(vgg19.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(vgg19.parameters(), lr=0.0003, momentum=0.9, weight_decay=0.001)
 
     best_model_wts = vgg19.state_dict()
     best_loss = float('inf')
@@ -55,6 +59,7 @@ def vgg19():
 
     for epoch in range(num_epochs):
         for i, (inputs, labels) in enumerate(train_loader):
+            inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = vgg19(inputs)
             loss = criterion(outputs, labels)
