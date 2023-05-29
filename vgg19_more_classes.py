@@ -5,10 +5,9 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.optim as optim
 from sklearn.metrics import confusion_matrix
+from torchvision.models import VGG19_Weights
 import matplotlib.pyplot as plt
 import numpy as np
-from torchvision.models import VGG19_Weights
-
 
 def vgg19():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,22 +27,26 @@ def vgg19():
     classes = ['contempt', 'happy', 'surprise', 'anger', 'disgust', 'fear', 'sadness']
     dataset.class_to_idx = {classes[i]: i for i in range(len(classes))}
     train_size = int(0.6 * len(dataset))
-    test_size = len(dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    val_size = int(0.2 * len(dataset))
+    test_size = len(dataset) - train_size - val_size
+    train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, val_size, test_size])
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False)
-    test_loader = torch.utils.data.DataLoader(val_dataset, batch_size=32, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     vgg19 = models.vgg19(weights=VGG19_Weights.IMAGENET1K_V1)
     vgg19 = vgg19.to(device)
     num_features = vgg19.classifier[6].in_features
-    features = list(vgg19.classifier.children())[:-1]
-    features.extend([nn.Linear(num_features, len(classes))])
+    features = list(vgg19.classifier.children())[:-2]
+    features.extend([nn.Dropout(p=0.5),
+                     nn.Linear(num_features, 256),
+                     nn.ReLU(inplace=True),
+                     nn.Dropout(p=0.5),
+                     nn.Linear(256, len(classes))])
     vgg19.classifier = nn.Sequential(*features)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(vgg19.parameters(), lr=0.003, momentum=0.9, weight_decay=0.001)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
+    optimizer = optim.SGD(vgg19.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.001)
 
     best_model_wts = vgg19.state_dict()
     best_loss = float('inf')
@@ -53,43 +56,61 @@ def vgg19():
     train_losses = []
     val_losses = []
     train_accuracies = []
+
     for epoch in range(num_epochs):
-        running_loss = 0.0
-        correct_preds = 0
-        total_preds = 0
         for i, (inputs, labels) in enumerate(train_loader):
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = vgg19(inputs)
             loss = criterion(outputs, labels)
+
+            if (i + 1) % 10 == 0:
+                with torch.no_grad():
+                    val_loss = 0.0
+                    for val_inputs, val_labels in val_loader:
+                        val_inputs, val_labels = val_inputs.to(device), val_labels.to(
+                            device)  # Move validation data to device
+                        val_outputs = vgg19(val_inputs)
+                        val_loss += criterion(val_outputs, val_labels).item() * val_inputs.size(0)
+                    val_loss /= len(val_dataset)
+
+                if val_loss < best_loss:
+                    best_loss = val_loss
+                    best_model_wts = vgg19.state_dict()
+                    no_improvement_epochs = 0
+                else:
+                    no_improvement_epochs += 1
+
             loss.backward()
             optimizer.step()
 
-            running_loss += loss.item()
-            _, preds = torch.max(outputs, 1)
-            correct_preds += (preds == labels).sum().item()
-            total_preds += labels.size(0)
+            if i % 100 == 0:
+                print('[%d, %5d] loss: %.3f' % (epoch + 1, i + 1, loss.item()))
 
-        train_losses.append(running_loss / len(train_loader))
-        train_accuracies.append(100 * correct_preds / total_preds)
-
+        train_loss = 0.0
+        correct_train = 0
+        total_train = 0
         with torch.no_grad():
-            val_loss = 0.0
-            for val_inputs, val_labels in val_loader:
-                val_inputs, val_labels = val_inputs.to(device), val_labels.to(device)
-                val_outputs = vgg19(val_inputs)
-                val_loss += criterion(val_outputs, val_labels).item() * val_inputs.size(0)
-            val_loss /= len(val_dataset)
-            val_losses.append(val_loss)
+            for inputs, labels in train_loader:
+                outputs = vgg19(inputs)
+                _, predicted = torch.max(outputs.data, 1)
+                total_train += labels.size(0)
+                correct_train += (predicted == labels).sum().item()
+                train_loss += criterion(outputs, labels).item() * inputs.size(0)
+        train_loss /= len(train_dataset)
+        train_accuracy = 100 * correct_train / total_train
 
-        if val_loss < best_loss:
-            best_loss = val_loss
-            best_model_wts = vgg19.state_dict()
-            no_improvement_epochs = 0
-        else:
-            no_improvement_epochs += 1
+        train_losses.append(train_loss)
+        train_accuracies.append(train_accuracy)
 
-        scheduler.step()
+        print('Epoch %d:' % (epoch + 1))
+        print('Training loss: %.3f' % train_loss)
+        print('Validation loss: %.3f' % val_loss)
+
+        if epoch > 10 and val_loss > best_loss:
+            break
+
+        val_losses.append(val_loss)
 
     vgg19.load_state_dict(best_model_wts)
 
@@ -97,7 +118,6 @@ def vgg19():
     total = 0
     with torch.no_grad():
         for inputs, labels in test_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
             outputs = vgg19(inputs)
             _, predicted = torch.max(outputs.data, 1)
             total += labels.size(0)
@@ -109,7 +129,6 @@ def vgg19():
     y_true = []
     with torch.no_grad():
         for inputs, labels in test_loader:
-            inputs, labels = inputs.to(device), labels.to(device)
             outputs = vgg19(inputs)
             _, predicted = torch.max(outputs.data, 1)
             y_pred.extend(predicted.tolist())

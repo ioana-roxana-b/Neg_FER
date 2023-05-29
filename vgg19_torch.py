@@ -46,7 +46,7 @@ def vgg19():
     vgg19.classifier = nn.Sequential(*features)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(vgg19.parameters(), lr=0.0003, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(vgg19.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.001)
 
     best_model_wts = vgg19.state_dict()
     best_loss = float('inf')
@@ -63,13 +63,13 @@ def vgg19():
             optimizer.zero_grad()
             outputs = vgg19(inputs)
             loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
 
             if (i + 1) % 10 == 0:
                 with torch.no_grad():
                     val_loss = 0.0
                     for val_inputs, val_labels in val_loader:
+                        val_inputs, val_labels = val_inputs.to(device), val_labels.to(
+                            device)  # Move validation data to device
                         val_outputs = vgg19(val_inputs)
                         val_loss += criterion(val_outputs, val_labels).item() * val_inputs.size(0)
                     val_loss /= len(val_dataset)
@@ -80,6 +80,9 @@ def vgg19():
                     no_improvement_epochs = 0
                 else:
                     no_improvement_epochs += 1
+
+            loss.backward()
+            optimizer.step()
 
             if i % 100 == 0:
                 print('[%d, %5d] loss: %.3f' % (epoch + 1, i + 1, loss.item()))
@@ -97,9 +100,12 @@ def vgg19():
         train_loss /= len(train_dataset)
         train_accuracy = 100 * correct_train / total_train
 
-
         train_losses.append(train_loss)
         train_accuracies.append(train_accuracy)
+
+        print('Epoch %d:' % (epoch + 1))
+        print('Training loss: %.3f' % train_loss)
+        print('Validation loss: %.3f' % val_loss)
 
         if epoch > 10 and val_loss > best_loss:
             break
