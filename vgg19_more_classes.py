@@ -46,7 +46,7 @@ def vgg19():
     vgg19.classifier = nn.Sequential(*features)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(vgg19.parameters(), lr=0.0001, momentum=0.9, weight_decay=0.001)
+    optimizer = optim.SGD(vgg19.parameters(), lr=0.001, momentum=0.9, weight_decay=0.001)
 
     best_model_wts = vgg19.state_dict()
     best_loss = float('inf')
